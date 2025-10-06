@@ -153,13 +153,23 @@ body {
 
 .editor-paragraph {
   margin: 0;
+  padding: 0;
   position: relative;
   line-height: 1.7;
   min-height: 1.7em;
 }
 
+.editor-paragraph:not(:first-child) {
+  margin-top: 0;
+}
+
 .editor-paragraph:last-child {
   margin-bottom: 0;
+}
+
+/* Prevent double spacing between paragraphs */
+.editor-paragraph + .editor-paragraph {
+  margin-top: 0;
 }
 
 .editor-text-bold {
@@ -232,16 +242,80 @@ body {
 }
 
 .editor-link {
-  color: rgb(55, 126, 184);
+  color: rgb(35, 131, 226);
   text-decoration: underline;
-  text-decoration-thickness: 1px;
+  text-decoration-thickness: 1.5px;
   text-underline-offset: 2px;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 2px;
+  font-weight: 500;
 }
 
 .editor-link:hover {
-  background-color: rgba(55, 126, 184, 0.1);
+  background-color: rgba(35, 131, 226, 0.12);
+  text-decoration-color: rgb(35, 131, 226);
+  transform: translateY(-0.5px);
+}
+
+.editor-link:active {
+  background-color: rgba(35, 131, 226, 0.2);
+  transform: translateY(0);
+}
+
+/* Ensure links are properly styled in all contexts */
+.editor-root a {
+  color: rgb(35, 131, 226);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 2px;
+  font-weight: 500;
+}
+
+.editor-root a:hover {
+  background-color: rgba(35, 131, 226, 0.12);
+  text-decoration-color: rgb(35, 131, 226);
+  transform: translateY(-0.5px);
+}
+
+.editor-root a:active {
+  background-color: rgba(35, 131, 226, 0.2);
+  transform: translateY(0);
+}
+
+/* Custom modal styling to match Notion's design */
+.mantine-Modal-root .mantine-Modal-overlay {
+  background: rgba(15, 15, 15, 0.6) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.mantine-Modal-root .mantine-Modal-content {
+  border-radius: 12px !important;
+  box-shadow: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 5px 10px, rgba(15, 15, 15, 0.2) 0px 15px 40px !important;
+  border: none !important;
+  background: white !important;
+}
+
+.mantine-Modal-root .mantine-Modal-header {
+  border-bottom: 1px solid rgba(55, 53, 47, 0.09) !important;
+  padding: 20px 24px 16px 24px !important;
+  background: white !important;
+}
+
+.mantine-Modal-root .mantine-Modal-body {
+  padding: 24px !important;
+  background: white !important;
+}
+
+.mantine-Modal-root .mantine-Modal-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: rgb(55, 53, 47) !important;
 }
 
 .editor-link-button {
@@ -287,4 +361,19 @@ body {
 
 .editor-root p + p {
   margin-top: 0;
+}
+
+/* Force single line spacing for all paragraphs */
+.editor-root > div > p {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.editor-root > div > p:not(:first-child) {
+  margin-top: 0 !important;
+}
+
+/* Ensure consistent spacing between different elements */
+.editor-root > div > * + * {
+  margin-top: 0 !important;
 }

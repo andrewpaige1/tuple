@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 import { AutoFocusPlugin } from '@lexical/react/LexicalAutoFocusPlugin';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
@@ -29,6 +29,7 @@ import {
 } from '@tabler/icons-react';
 import styles from './Editor.module.css';
 import { SlashCommandPlugin, ClickableLinkPlugin } from './SlashMenu';
+import { SimpleBlockSideMenu } from './SimpleBlockSideMenu';
 
 const theme = {
   root: 'editor-root',
@@ -100,6 +101,7 @@ function EditorToolbar() {
 export default function Editor() {
   const [title, setTitle] = useState('');
   const [titleFocused, setTitleFocused] = useState(false);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
   
   const initialConfig = {
     namespace: 'TuupleEditor',
@@ -128,9 +130,11 @@ export default function Editor() {
       <LexicalComposer initialConfig={initialConfig}>
         {/* Floating Toolbar - Hidden by default, shows on selection */}
         <EditorToolbar />
-        
+        {/* Simple Block Side Menu */}
+        <SimpleBlockSideMenu editorContainerRef={editorContainerRef} />
         {/* Full-screen Notion-like Editor */}
         <Box 
+          ref={editorContainerRef}
           style={{ 
             minHeight: '100vh',
             fontSize: '16px',
@@ -203,6 +207,7 @@ export default function Editor() {
             contentEditable={
               <ContentEditable
                 className={styles.editorContent}
+                data-lexical-editor
                 style={{
                   minHeight: 'calc(100vh - 200px)',
                   outline: 'none',
@@ -254,7 +259,6 @@ export default function Editor() {
             ErrorBoundary={LexicalErrorBoundary}
           />
         </Box>
-        
         {/* Plugins */}
         <HistoryPlugin />
         <AutoFocusPlugin />

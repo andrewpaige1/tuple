@@ -21,6 +21,30 @@
   margin: 0;
   font-size: 16px;
   line-height: 1.7;
+  position: relative;
+}
+
+/* Notion-style block elements with proper hover areas */
+.editorContent p,
+.editorContent h1,
+.editorContent h2, 
+.editorContent h3,
+.editorContent li,
+.editorContent blockquote {
+  position: relative;
+  transition: background-color 0.1s ease;
+  border-radius: 3px;
+  padding: 1px 0;
+  margin: 1px 0;
+}
+
+.editorContent p:hover,
+.editorContent h1:hover,
+.editorContent h2:hover,
+.editorContent h3:hover,
+.editorContent li:hover,
+.editorContent blockquote:hover {
+  background-color: rgba(55, 53, 47, 0.08);
 }
 
 .editorContent:focus {

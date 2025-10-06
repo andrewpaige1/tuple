@@ -2,8 +2,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { ActionIcon, Menu, Text } from '@mantine/core';
-import { 
-  IconPlus, 
+import {
+  IconPlus,
   IconGripVertical,
   IconH1,
   IconH2,
@@ -15,8 +15,11 @@ import {
 import {
   $createParagraphNode,
   $getRoot,
+  $getNodeByKey,
+  $getNearestNodeFromDOMNode,
   ElementNode,
-  $createTextNode
+  $createTextNode,
+  NodeKey,
 } from 'lexical';
 import {
   $createHeadingNode,
@@ -56,6 +59,30 @@ const createNodeForBlockType = (blockType: string): ElementNode => {
   }
 };
 
+// Helper to find the closest block element to the mouse position
+const findClosestBlock = (clientY: number, editorElement: HTMLElement): HTMLElement | null => {
+  const allBlocks = Array.from(
+    editorElement.querySelectorAll(BLOCK_ELEMENT_TAGS.join(', '))
+  ) as HTMLElement[];
+
+  if (allBlocks.length === 0) {
+    return null;
+  }
+
+  let closestBlock: HTMLElement | null = null;
+  let minDistance = Infinity;
+
+  for (const block of allBlocks) {
+    const rect = block.getBoundingClientRect();
+    const distance = Math.abs(clientY - (rect.top + rect.height / 2));
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestBlock = block;
+    }
+  }
+  return closestBlock;
+};
+
 
 export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef: React.RefObject<HTMLDivElement | null> }) {
   const [editor] = useLexicalComposerContext();
@@ -65,7 +92,17 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
   const [containerHovered, setContainerHovered] = useState(false);
   const hideTimeoutId = useRef<NodeJS.Timeout | null>(null);
 
-  // Cancel any pending hide
+  // --- Drag and Drop State ---
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDataRef = useRef<{
+    sourceKey: NodeKey | null;
+    targetKey: NodeKey | null;
+    dropPosition: 'before' | 'after' | null;
+  }>({ sourceKey: null, targetKey: null, dropPosition: null });
+  const ghostElementRef = useRef<HTMLDivElement | null>(null);
+  const dropIndicatorRef = useRef<HTMLDivElement | null>(null);
+  // --- End Drag and Drop State ---
+
   const cancelHideMenu = useCallback(() => {
     if (hideTimeoutId.current) {
       clearTimeout(hideTimeoutId.current);
@@ -73,7 +110,6 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
     }
   }, []);
 
-  // Hide menu only if neither container nor menu is hovered
   const maybeHideMenu = useCallback(() => {
     cancelHideMenu();
     hideTimeoutId.current = setTimeout(() => {
@@ -88,7 +124,6 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
     const editorElement = editor.getRootElement();
     if (!container || !editorElement) return;
 
-    // Track hover state for container
     const handleContainerEnter = () => {
       setContainerHovered(true);
       cancelHideMenu();
@@ -98,33 +133,18 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
       maybeHideMenu();
     };
 
-    // Track mouse movement for block detection
     const handleMouseMove = (event: Event) => {
+      if (isDragging) return;
+
       const mouseEvent = event as MouseEvent;
-      const { clientY } = mouseEvent;
-      const allBlocks = Array.from(
-        editorElement.querySelectorAll(BLOCK_ELEMENT_TAGS.join(', '))
-      ) as HTMLElement[];
-      if (allBlocks.length === 0) {
-        return;
-      }
-      let closestBlock: HTMLElement | null = null;
-      let minDistance = Infinity;
-      for (const block of allBlocks) {
-        const rect = block.getBoundingClientRect();
-        const distance = Math.abs(clientY - (rect.top + rect.height / 2));
-        if (distance < minDistance) {
-          minDistance = distance;
-          closestBlock = block;
-        }
-      }
+      const closestBlock = findClosestBlock(mouseEvent.clientY, editorElement);
+
       if (closestBlock && closestBlock !== activeBlock) {
         setActiveBlock(closestBlock);
         const rect = closestBlock.getBoundingClientRect();
-        // Position menu relative to the actual text content, not the container
         setPosition({
-          top: rect.top + window.scrollY + rect.height / 2 - 12, // center vertically (12px = half of 24px icon height)
-          left: rect.left - 60, // position to the left of the actual text content
+          top: rect.top + window.scrollY + rect.height / 2 - 12,
+          left: rect.left - 60,
         });
       }
     };
@@ -139,9 +159,8 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
       container.removeEventListener('mouseleave', handleContainerLeave);
       cancelHideMenu();
     };
-  }, [editor, editorContainerRef, activeBlock, cancelHideMenu, maybeHideMenu]);
+  }, [editor, editorContainerRef, activeBlock, cancelHideMenu, maybeHideMenu, isDragging]);
 
-  // Menu hover handlers
   const handleMenuEnter = () => {
     setMenuHovered(true);
     cancelHideMenu();
@@ -151,13 +170,136 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
     maybeHideMenu();
   };
 
+  // --- Drag and Drop Handlers ---
+  const handleDragMove = useCallback((event: MouseEvent) => {
+    const { clientX, clientY } = event;
+
+    if (ghostElementRef.current) {
+        ghostElementRef.current.style.left = `${clientX}px`;
+        ghostElementRef.current.style.top = `${clientY}px`;
+    }
+
+    const editorElement = editor.getRootElement();
+    if (!editorElement || !dropIndicatorRef.current) return;
+
+    const targetBlock = findClosestBlock(clientY, editorElement);
+
+    if (targetBlock) {
+      editor.update(() => {
+        const targetNode = $getNearestNodeFromDOMNode(targetBlock);
+        if (!targetNode || targetNode.getKey() === dragDataRef.current.sourceKey) {
+            dropIndicatorRef.current!.style.display = 'none';
+            dragDataRef.current.targetKey = null;
+            return;
+        }
+
+        dragDataRef.current.targetKey = targetNode.getKey();
+        const rect = targetBlock.getBoundingClientRect();
+        const isTopHalf = clientY < rect.top + rect.height / 2;
+
+        if (isTopHalf) {
+            dropIndicatorRef.current!.style.top = `${rect.top - 2}px`;
+            dragDataRef.current.dropPosition = 'before';
+        } else {
+            dropIndicatorRef.current!.style.top = `${rect.bottom}px`;
+            dragDataRef.current.dropPosition = 'after';
+        }
+        dropIndicatorRef.current!.style.left = `${rect.left}px`;
+        dropIndicatorRef.current!.style.width = `${rect.width}px`;
+        dropIndicatorRef.current!.style.display = 'block';
+      });
+    } else if (dropIndicatorRef.current) {
+        dropIndicatorRef.current.style.display = 'none';
+        dragDataRef.current.targetKey = null;
+    }
+  }, [editor]);
+
+  const handleDragEnd = useCallback(() => {
+    document.removeEventListener('mousemove', handleDragMove);
+    document.body.style.cursor = '';
+
+    if (ghostElementRef.current) {
+      document.body.removeChild(ghostElementRef.current);
+      ghostElementRef.current = null;
+    }
+    if (dropIndicatorRef.current) {
+      document.body.removeChild(dropIndicatorRef.current);
+      dropIndicatorRef.current = null;
+    }
+
+    const { sourceKey, targetKey, dropPosition } = dragDataRef.current;
+    if (sourceKey && targetKey && dropPosition && sourceKey !== targetKey) {
+        editor.update(() => {
+            const sourceNode = $getNodeByKey(sourceKey);
+            const targetNode = $getNodeByKey(targetKey);
+
+            if (sourceNode && targetNode) {
+                if (dropPosition === 'before') {
+                    targetNode.insertBefore(sourceNode);
+                } else {
+                    targetNode.insertAfter(sourceNode);
+                }
+                sourceNode.selectEnd();
+            }
+        });
+    }
+
+    setIsDragging(false);
+    dragDataRef.current = { sourceKey: null, targetKey: null, dropPosition: null };
+  }, [editor, handleDragMove]);
+
+  const handleDragStart = useCallback((event: React.MouseEvent) => {
+    if (!activeBlock) return;
+    event.preventDefault();
+
+    let sourceKey: NodeKey | null = null;
+
+    editor.read(() => {
+      const node = $getNearestNodeFromDOMNode(activeBlock);
+      if (node) {
+        sourceKey = node.getKey();
+      }
+    });
+
+    if (!sourceKey) {
+      return;
+    }
+
+    dragDataRef.current.sourceKey = sourceKey;
+    setIsDragging(true);
+
+    const ghost = activeBlock.cloneNode(true) as HTMLDivElement;
+    ghost.style.position = 'fixed';
+    ghost.style.zIndex = '1001';
+    ghost.style.opacity = '0.7';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.width = `${activeBlock.offsetWidth}px`;
+    ghost.style.transform = 'translate(-20px, -10px)';
+    document.body.appendChild(ghost);
+    ghostElementRef.current = ghost;
+
+    const indicator = document.createElement('div');
+    indicator.style.position = 'fixed';
+    indicator.style.zIndex = '1001';
+    indicator.style.backgroundColor = '#4d90fe';
+    indicator.style.height = '2px';
+    indicator.style.display = 'none';
+    document.body.appendChild(indicator);
+    dropIndicatorRef.current = indicator;
+
+    document.body.style.cursor = 'grabbing';
+    document.addEventListener('mousemove', handleDragMove);
+    document.addEventListener('mouseup', handleDragEnd, { once: true });
+
+  }, [activeBlock, editor, handleDragEnd, handleDragMove]);
+  // --- End Drag and Drop Handlers ---
+
   const handleInsertBlock = (blockType: string) => {
     if (!activeBlock) return;
 
     editor.update(() => {
         const root = $getRoot();
-        const children = root.getChildren();
-        const targetNode = children.find(node => editor.getElementByKey(node.getKey()) === activeBlock);
+        const targetNode = $getNearestNodeFromDOMNode(activeBlock);
         
         if (!targetNode) return;
 
@@ -170,25 +312,23 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
 
         targetNode.insertAfter(newNode);
         
-        if (newNode.select()) {
-            const focusNode = (newNode.getType() === 'list') ? newNode.getFirstChild() : newNode;
-            if (focusNode) {
-                focusNode.selectEnd();
-            }
+        const focusNode = (newNode.getType() === 'list') ? newNode.getFirstChild() : newNode;
+        if (focusNode) {
+            focusNode.selectEnd();
         }
     });
 
     setActiveBlock(null);
   };
 
-  if (!activeBlock) return null;
+  if (!activeBlock || isDragging) return null;
 
   return (
     <div
       data-block-side-menu
       style={{
         position: 'fixed',
-        top: position.top, // align to block top
+        top: position.top,
         left: position.left,
         zIndex: 1000,
         display: 'flex',
@@ -199,7 +339,6 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
       onMouseEnter={handleMenuEnter}
       onMouseLeave={handleMenuLeave}
     >
-      {/* Plus Button */}
       <Menu position="bottom-start" withArrow shadow="md">
         <Menu.Target>
           <ActionIcon variant="subtle" size="sm" style={{ width: '24px', height: '24px' }}>
@@ -232,13 +371,11 @@ export function SimpleBlockSideMenu({ editorContainerRef }: { editorContainerRef
         </Menu.Dropdown>
       </Menu>
 
-      {/* Drag Handle */}
       <ActionIcon
         variant="subtle"
         size="sm"
         style={{ width: '24px', height: '24px', cursor: 'grab' }}
-        onMouseDown={(e) => { e.currentTarget.style.cursor = 'grabbing'; }}
-        onMouseUp={(e) => { e.currentTarget.style.cursor = 'grab'; }}
+        onMouseDown={handleDragStart}
       >
         <IconGripVertical size={18} />
       </ActionIcon>
